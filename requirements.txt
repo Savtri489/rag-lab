@@ -1,0 +1,7 @@
+numpy>=1.24
+scikit-learn>=1.3
+pytest>=7.4
+# Optional upgrades (not needed for the default offline demo):
+# sentence-transformers>=2.7   # real semantic embeddings
+# anthropic>=0.40              # real LLM answers (set ANTHROPIC_API_KEY)
+streamlit>=1.30

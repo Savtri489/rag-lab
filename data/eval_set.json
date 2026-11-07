@@ -1,0 +1,8 @@
+[
+  {"question": "How many casual leave days do I get?", "expected_source": "hr_leave_policy.txt", "must_contain": "18 days"},
+  {"question": "Do I need a medical certificate for sick leave?", "expected_source": "hr_leave_policy.txt", "must_contain": "medical certificate"},
+  {"question": "How long is the password reset link valid?", "expected_source": "it_support.txt", "must_contain": "15 minutes"},
+  {"question": "Which Wi-Fi network should I connect to?", "expected_source": "it_support.txt", "must_contain": "NimbusSecure"},
+  {"question": "What is the hotel limit in metro cities?", "expected_source": "expense_policy.txt", "must_contain": "6000"},
+  {"question": "How soon should I claim travel expenses?", "expected_source": "expense_policy.txt", "must_contain": "30 days"}
+]

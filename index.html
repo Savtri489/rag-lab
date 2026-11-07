@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Lab - see how a question finds its answer</title>
+<style>
+:root{--bg:#F2F5F8;--card:#fff;--ink:#14213D;--mute:#5B6B82;--line:#D5DDE7;--accent:#0F7B7D;--hit:#F2A541;--good:#1F7A4D;--bad:#B8432F;--r:10px}
+@media (prefers-color-scheme:dark){:root{--bg:#0E1626;--card:#16223A;--ink:#E7EDF7;--mute:#9AA9C0;--line:#2A3A57;--accent:#4FC3C5;--hit:#F2B45C;--good:#5BC38A;--bad:#E8806C}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:28px 24px 8px;max-width:1180px;margin:auto}
+h1{margin:0;font-size:2rem;letter-spacing:-.02em}
+header p{margin:.3rem 0 0;color:var(--mute);max-width:60ch}
+.wrap{display:grid;grid-template-columns:340px 1fr;gap:16px;max-width:1180px;margin:16px auto;padding:0 24px 40px}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}}
+aside,.main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+h2{font-size:1.05rem;margin:0 0 8px}
+.hint,.small{color:var(--mute);font-size:.88rem;margin:0 0 8px}
+textarea{width:100%;height:230px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical}
+label{display:flex;justify-content:space-between;font-size:.92rem;margin-top:10px}
+select,input[type=text]{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--hit);outline-offset:2px}
+.pipe{display:flex;flex-wrap:wrap;gap:6px;list-style:none;padding:0;margin:8px 0}
+.pipe li{padding:4px 10px;border:1px solid var(--accent);border-radius:99px;font-size:.88rem}
+.row{display:flex;gap:8px}
+.go{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{background:transparent;color:var(--ink);border:1px dashed var(--mute);border-radius:99px;padding:3px 10px;font-size:.85rem}
+.chip[aria-pressed=true]{border-style:solid;border-color:var(--accent);background:var(--accent);color:#fff}
+.goal{margin-top:10px;font-weight:600}.ok{color:var(--good)}.no{color:var(--bad)}
+.strip{display:flex;gap:3px;height:54px}
+.chunk{flex:1 1 0;min-width:14px;border:2px solid transparent;border-radius:6px;padding:0;color:var(--ink);font-size:.75rem;background:color-mix(in srgb,var(--accent) var(--p,0%),var(--bg))}
+.chunk.top{border-color:var(--hit)}
+.chunk[aria-pressed=true]{outline:2px solid var(--ink)}
+.detail{margin-top:10px;padding:10px 12px;border-left:4px solid var(--accent);background:var(--bg);font-size:.92rem}
+.hit{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px}
+.hit b{font-size:.9rem}.bar{height:6px;border-radius:3px;background:var(--line);margin:6px 0}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--hit)}
+mark{background:color-mix(in srgb,var(--hit) 55%,transparent);color:inherit;border-radius:3px;padding:0 2px}
+pre{white-space:pre-wrap;background:var(--bg);border-radius:8px;padding:12px;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0;max-height:260px;overflow:auto}
+.answer{font-size:1.1rem;padding:12px 14px;border-left:4px solid var(--good);background:var(--bg);border-radius:0 8px 8px 0}
+.answer.idk{border-color:var(--bad)}
+.q{margin:12px 0}.q p{margin:0 0 4px;font-weight:600}
+.q label{display:block;margin:2px 0;font-size:.92rem}
+.fb{font-size:.88rem;margin-top:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>RAG Lab</h1>
+  <p>Change the settings, ask a question, and watch how a RAG system finds the right text before it answers.</p>
+</header>
+<div class="wrap">
+<aside>
+  <section class="card">
+    <h2>Your documents</h2>
+    <p class="hint">Separate documents with a line containing three dashes. The first line of each is its title. Paste your own text to try it.</p>
+    <textarea id="docs" aria-label="Documents"></textarea>
+  </section>
+  <section class="card">
+    <h2>Chunking and retrieval settings</h2>
+    <label for="strat">Chunking strategy</label>
+    <select id="strat"><option value="sentence">Whole sentences (keeps facts intact)</option><option value="fixed">Fixed word window (can cut mid-fact)</option></select>
+    <label for="size">Chunk size <span id="sizeV"></span></label>
+    <input id="size" type="range" min="10" max="150" value="40">
+    <label for="ov">Overlap (fixed only) <span id="ovV"></span></label>
+    <input id="ov" type="range" min="0" max="60" value="10">
+    <label for="k">Top-k chunks sent to the LLM <span id="kV"></span></label>
+    <input id="k" type="range" min="1" max="5" value="3">
+  </section>
+</aside>
+<div class="main">
+  <section class="card">
+    <h2>What is RAG?</h2>
+    <p style="margin:0">An LLM has never read your private documents, and it may guess when it does not know. Retrieval-Augmented Generation (RAG) fixes this: at question time it looks up the most relevant pieces of your documents and puts them in the prompt, so the model answers from evidence.</p>
+    <ol class="pipe"><li>Load</li><li>Chunk</li><li>Embed</li><li>Retrieve</li><li>Build prompt</li><li>Generate</li></ol>
+    <p class="small">45-minute path: read this card (5 min), explore the settings (15 min), finish the three challenges (15 min), take the knowledge check (5 min), read the build guide (5 min).</p>
+  </section>
+  <section class="card">
+    <h2>Ask a question</h2>
+    <div class="row"><input id="q" type="text" value="Can I carry forward sick leave?" aria-label="Question"><button class="go" id="ask">Ask</button></div>
+    <div class="chips" id="chips" role="group" aria-label="Challenges"></div>
+    <p class="goal" id="goal"></p>
+    <p class="small">Challenge: pick a goal, then change chunk size, strategy and top-k until the goal passes. Find the smallest top-k that works.</p>
+  </section>
+  <section class="card">
+    <h2>Chunks and similarity</h2>
+    <p class="hint">Each block is a chunk, as wide as its word count. Darker teal means more similar to your question. Amber outline means it was retrieved. Select a block to read it.</p>
+    <div class="strip" id="strip"></div>
+    <div class="detail" id="detail"></div>
+  </section>
+  <section class="card"><h2>Retrieved context (top-k)</h2><div id="hits"></div></section>
+  <section class="card"><h2>Prompt sent to the LLM</h2><pre id="prompt"></pre></section>
+  <section class="card"><h2>Answer</h2><div class="answer" id="answer"></div>
+    <p class="small" style="margin-top:8px">This demo answers by picking the best sentence from the retrieved chunks. In the Python project, set an API key to let a real LLM write the answer from the same prompt.</p></section>
+  <section class="card"><h2>Knowledge check</h2><div id="quiz"></div></section>
+</div>
+</div>
+<script>
+const DOCS = `# HR leave policy
+Nimbus Labs offers 18 days of paid casual leave per calendar year. Sick leave is separate: 10 days per year, and a medical certificate is required for absences longer than 2 consecutive days. Unused casual leave can be carried forward up to 5 days into the next year, but sick leave cannot be carried forward. Maternity leave is 26 weeks and paternity leave is 10 working days. Leave requests must be submitted in the HR portal at least 3 working days in advance, except for emergencies. Managers approve or reject requests within 2 working days. Public holidays are not counted as leave days.
+---
+# IT support
+Employees receive a company laptop on their first day. To connect to the office Wi-Fi, choose the network NimbusSecure and sign in with your company email and password. If you forget your password, reset it at the self-service portal; the reset link expires after 15 minutes. VPN access is mandatory when working from home and uses the Nimbus VPN app with two-factor authentication. For hardware faults, raise a ticket at the helpdesk. Critical issues such as a dead laptop are answered within 4 hours, and normal issues within 2 working days. Never install unapproved software on company devices.
+---
+# Expense policy
+Employees can claim travel expenses within 30 days of the trip. Flights must be economy class and booked at least 7 days before travel. Hotel stays are reimbursed up to 6000 rupees per night in metro cities and 4000 rupees elsewhere. Meals during travel are reimbursed up to 1500 rupees per day with itemised bills. Claims above 25000 rupees need approval from a director. Submit claims in the finance portal with scanned receipts. Reimbursements are paid in the next monthly payroll cycle. Personal expenses and alcohol are never reimbursed.`;
+const CHALLENGES = [
+  {label:"Sick leave carry-forward", q:"Can I carry forward sick leave?", must:"but sick leave cannot be carried forward"},
+  {label:"Password link", q:"How long is the password reset link valid?", must:"reset link expires after 15 minutes"},
+  {label:"Metro hotel limit", q:"What is the hotel limit in metro cities?", must:"6000 rupees per night in metro cities"}
+];
+const QUIZ = [
+  {q:"Why do fixed-size chunks usually overlap?", o:["To make the index bigger","So a fact cut at a boundary still appears whole in one chunk","To remove stop words","To speed up the LLM"], a:1, why:"Overlap repeats the words around each cut, so a sentence split at a boundary survives in the neighbouring chunk."},
+  {q:"The retriever returns the wrong chunks. What happens to the answer?", o:["The LLM fixes it automatically","It is usually wrong or invented, however strong the LLM is","Nothing, the LLM ignores context","The answer is always correct but slower"], a:1, why:"The LLM only sees what retrieval gives it. Weak retrieval is the most common reason a RAG system fails."},
+  {q:"Top similarity is very low. What should a good RAG bot do?", o:["Answer from general knowledge","Pick any chunk anyway","Say it does not know","Increase k to 50"], a:2, why:"A score threshold lets the bot refuse instead of hallucinating."}
+];
+const STOP = new Set("a an the is are was were be to of in on at for and or with by from as it this that you your do does i can how what which when who my me we our if not no any must may will".split(" "));
+const MIN_SCORE = 0.08;
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const tok = t => (t.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => !STOP.has(w));
+let chunks = [], df = new Map(), goal = null, picked = -1;
+
+function chunkFixed(text,size,ov){
+  const w = text.split(/\s+/).filter(Boolean), step = Math.max(1,size-ov), out = [];
+  for(let i=0;i<w.length;i+=step){ out.push(w.slice(i,i+size).join(" ")); if(i+size>=w.length) break; }
+  return out;
+}
+function chunkSent(text,max){
+  const s = text.trim().split(/(?<=[.!?])\s+/), out = []; let cur = [], n = 0;
+  for(const x of s){ const c = x.split(/\s+/).length; if(cur.length && n+c>max){ out.push(cur.join(" ")); cur=[]; n=0; } cur.push(x); n+=c; }
+  if(cur.length) out.push(cur.join(" "));
+  return out;
+}
+const idf = w => Math.log((1+chunks.length)/(1+(df.get(w)||0))) + 1;
+function vec(ts){
+  const tf = new Map(), v = new Map(); let n = 0;
+  ts.forEach(w => tf.set(w,(tf.get(w)||0)+1));
+  tf.forEach((c,w) => { if(!df.has(w)) return; const x = (1+Math.log(c))*idf(w); v.set(w,x); n += x*x; });
+  n = Math.sqrt(n) || 1; v.forEach((x,w) => v.set(w,x/n));
+  return v;
+}
+const dot = (a,b) => { let s = 0; a.forEach((x,w) => { if(b.has(w)) s += x*b.get(w); }); return s; };
+
+function build(){
+  const strat = $("#strat").value, size = +$("#size").value, ov = Math.min(+$("#ov").value, size-1);
+  const docs = $("#docs").value.split(/\n-{3,}\n/).map(d => d.trim()).filter(Boolean).map(d => { const [t,...r] = d.split("\n"); return {title:t.replace(/^#\s*/,""), text:r.join(" ").trim()}; });
+  chunks = [];
+  docs.forEach(d => (strat==="fixed" ? chunkFixed(d.text,size,ov) : chunkSent(d.text,size)).forEach((t,i) => chunks.push({src:d.title,id:i,text:t})));
+  const toks = chunks.map(c => tok(c.text)); df = new Map();
+  toks.forEach(ts => new Set(ts).forEach(w => df.set(w,(df.get(w)||0)+1)));
+  chunks.forEach((c,i) => c.vec = vec(toks[i]));
+}
+function search(q,k){
+  const qv = vec(tok(q)), scored = chunks.map((c,i) => ({i, s:dot(qv,c.vec)}));
+  return scored.sort((a,b) => b.s-a.s).slice(0,k);
+}
+function highlight(text,qset){ return text.split(/([A-Za-z0-9]+)/).map(p => qset.has(p.toLowerCase()) ? `<mark>${esc(p)}</mark>` : esc(p)).join(""); }
+function answerFrom(q,hits){
+  const qs = new Set(tok(q)); let best = {n:0, s:null, i:0};
+  hits.forEach((h,i) => chunks[h.i].text.split(/(?<=[.!?])\s+/).forEach(s => { const n = tok(s).filter(w => qs.has(w)).length; if(n>best.n) best = {n, s, i:i+1}; }));
+  return best.s ? `${best.s} [${best.i}]` : null;
+}
+function showDetail(i){
+  picked = i; const c = chunks[i], q = $("#q").value, s = dot(vec(tok(q)), c.vec);
+  $("#detail").innerHTML = `<b>${esc(c.src)}, chunk ${c.id+1}</b> (${c.text.split(/\s+/).length} words, similarity ${s.toFixed(2)})<br>${esc(c.text)}`;
+  document.querySelectorAll(".chunk").forEach(b => b.setAttribute("aria-pressed", +b.dataset.i===i));
+}
+function render(){
+  build();
+  $("#sizeV").textContent = $("#size").value + " words"; $("#ovV").textContent = $("#ov").value + " words"; $("#kV").textContent = $("#k").value;
+  $("#ov").disabled = $("#strat").value !== "fixed";
+  const q = $("#q").value, k = +$("#k").value, hits = search(q,k), qset = new Set(tok(q));
+  const topSet = new Set(hits.map(h => h.i)), score = new Map(search(q,chunks.length).map(h => [h.i,h.s]));
+  $("#strip").innerHTML = chunks.map((c,i) => `<button class="chunk ${topSet.has(i)?"top":""}" data-i="${i}" aria-pressed="false" style="flex-grow:${c.text.split(/\s+/).length};--p:${Math.min(100,Math.round(score.get(i)*180))}%" title="${esc(c.src)} chunk ${c.id+1}: ${score.get(i).toFixed(2)}">${i+1}</button>`).join("");
+  document.querySelectorAll(".chunk").forEach(b => b.onclick = () => showDetail(+b.dataset.i));
+  showDetail(hits.length ? hits[0].i : 0);
+  $("#hits").innerHTML = hits.map((h,r) => `<div class="hit"><b>[${r+1}] ${esc(chunks[h.i].src)}, chunk ${chunks[h.i].id+1}</b> similarity ${h.s.toFixed(2)}<div class="bar"><i style="width:${Math.round(h.s*100)}%"></i></div>${highlight(chunks[h.i].text,qset)}</div>`).join("");
+  const ctx = hits.map((h,r) => `[${r+1}] (source: ${chunks[h.i].src})\n${chunks[h.i].text}`).join("\n\n");
+  const refuse = !hits.length || hits[0].s < MIN_SCORE;
+  $("#prompt").textContent = refuse ? "Top similarity is below the threshold, so no prompt is sent." : `Answer ONLY using the context below. Cite sources like [1]. If the answer is not in the context, say you don't know.\n\nContext:\n${ctx}\n\nQuestion: ${q}\nAnswer:`;
+  const ans = refuse ? null : answerFrom(q,hits), a = $("#answer");
+  a.textContent = ans || "I don't know based on the documents."; a.className = "answer" + (ans ? "" : " idk");
+  if(goal){
+    const r = hits.findIndex(h => chunks[h.i].text.includes(goal.must));
+    $("#goal").innerHTML = r >= 0 ? `<span class="ok">Goal passed: "${esc(goal.must)}" is in retrieved chunk ${r+1}.</span>` : `<span class="no">Goal not met yet: "${esc(goal.must)}" is not in the top ${k} chunks.</span>`;
+  } else $("#goal").textContent = "";
+}
+function init(){
+  $("#docs").value = DOCS;
+  $("#chips").innerHTML = CHALLENGES.map((c,i) => `<button class="chip" aria-pressed="false" data-c="${i}">${c.label}</button>`).join("");
+  document.querySelectorAll(".chip").forEach(b => b.onclick = () => {
+    goal = CHALLENGES[+b.dataset.c]; $("#q").value = goal.q;
+    document.querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", x===b)); render();
+  });
+  $("#quiz").innerHTML = QUIZ.map((x,qi) => `<div class="q"><p>${esc(x.q)}</p>${x.o.map((o,oi) => `<label><input type="radio" name="q${qi}" value="${oi}"> ${esc(o)}</label>`).join("")}<div class="fb" id="fb${qi}"></div></div>`).join("");
+  QUIZ.forEach((x,qi) => document.querySelectorAll(`input[name=q${qi}]`).forEach(r => r.onchange = () => {
+    const ok = +r.value === x.a; $("#fb"+qi).innerHTML = `<span class="${ok?"ok":"no"}">${ok?"Correct.":"Not quite."}</span> ${esc(x.why)}`;
+  }));
+  ["strat","size","ov","k"].forEach(id => $("#"+id).addEventListener("input", render));
+  $("#docs").addEventListener("input", render); $("#q").addEventListener("input", render); $("#ask").onclick = render;
+  $("#q").addEventListener("keydown", e => { if(e.key==="Enter") render(); });
+  render();
+}
+init();
+</script>
+</body>
+</html>
